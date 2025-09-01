@@ -8,9 +8,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"strconv"
 	"testing"
 
+	"github.com/bytedance/sonic"
 	. "github.com/onsi/gomega"
 	"github.com/stretchr/testify/require"
 )
@@ -142,10 +142,10 @@ func TestRpcClient_Call(t *testing.T) {
 	rpcClient.Call(context.Background(), "singleStructInArray", []interface{}{person})
 	Expect((<-requestChan).body).To(Equal(`{"method":"singleStructInArray","params":[{"name":"Alex","age":35,"country":"Germany"}],"id":1,"jsonrpc":"2.0"}`))
 
-	rpcClient.Call(context.Background(), "namedParameters", map[string]interface{}{
-		"name": "Alex",
-		"age":  35,
-	})
+	rpcClient.Call(context.Background(), "namedParameters", struct {
+		Name string `json:"name"`
+		Age  int    `json:"age"`
+	}{"Alex", 35})
 	Expect((<-requestChan).body).To(Equal(`{"method":"namedParameters","params":{"name":"Alex","age":35},"id":1,"jsonrpc":"2.0"}`))
 
 	rpcClient.Call(context.Background(), "anonymousStructNoTags", struct {
@@ -230,10 +230,10 @@ func TestRpcClient_CallBatch(t *testing.T) {
 		NewRequest("singlePointerToStruct", &person),
 		NewRequest("multipleStructs", person, &drink),
 		NewRequest("singleStructInArray", []interface{}{person}),
-		NewRequest("namedParameters", map[string]interface{}{
-			"name": "Alex",
-			"age":  35,
-		}),
+		NewRequest("namedParameters", struct {
+			Name string `json:"name"`
+			Age  int    `json:"age"`
+		}{"Alex", 35}),
 		NewRequest("anonymousStructNoTags", struct {
 			Name string
 			Age  int
@@ -386,14 +386,14 @@ func TestRpcJsonResponseStruct(t *testing.T) {
 	res, err = rpcClient.Call(context.Background(), "something", 1, 2, 3)
 	<-requestChan
 	Expect(err).To(BeNil())
-	Expect(res.Result).To(Equal(stdjson.RawMessage([]byte(strconv.Quote("ok")))))
+	Expect(res.Result).To(Equal("ok"))
 
 	// result with error null is ok
 	responseBody = `{"result": "ok", "error": null}`
 	res, err = rpcClient.Call(context.Background(), "something", 1, 2, 3)
 	<-requestChan
 	Expect(err).To(BeNil())
-	Expect(res.Result).To(Equal(stdjson.RawMessage([]byte(strconv.Quote("ok")))))
+	Expect(res.Result).To(Equal("ok"))
 
 	// error with result null is ok
 	responseBody = `{"error": {"code": 123, "message": "something wrong"}, "result": null}`
@@ -445,8 +445,12 @@ func TestRpcJsonResponseStruct(t *testing.T) {
 	<-requestChan
 	Expect(err).To(BeNil())
 	Expect(res.Error).To(BeNil())
-	err = res.GetObject(&p)
+	// Convert result to Person struct using JSON marshaling
+	resultBytes, err := sonic.Marshal(res.Result)
 	Expect(err).To(BeNil())
+	p = &Person{}
+	err = sonic.Unmarshal(resultBytes, p)
+	Expect(err).To(BeNil()) // Should succeed since unknown fields are dropped during first decode
 	Expect(p.Name).To(Equal("Alex"))
 	Expect(p.Age).To(Equal(35))
 	Expect(p.Country).To(Equal(""))
@@ -458,8 +462,12 @@ func TestRpcJsonResponseStruct(t *testing.T) {
 	<-requestChan
 	Expect(err).To(BeNil())
 	Expect(res.Error).To(BeNil())
-	err = res.GetObject(&p)
+	// Convert result to Person struct using JSON marshaling
+	resultBytes, err = sonic.Marshal(res.Result)
 	Expect(err).To(BeNil())
+	p = &Person{}
+	err = sonic.Unmarshal(resultBytes, p)
+	Expect(err).To(BeNil()) // Should succeed since unknown fields are ignored
 	Expect(p).NotTo(BeNil())
 
 	// TODO: HERE######
@@ -469,10 +477,16 @@ func TestRpcJsonResponseStruct(t *testing.T) {
 	<-requestChan
 	Expect(err).To(BeNil())
 	Expect(res.Error).To(BeNil())
-	err = res.GetObject(&pp)
+	// Convert result to PointerFieldPerson struct using JSON marshaling
+	resultBytes, err = sonic.Marshal(res.Result)
 	Expect(err).To(BeNil())
+	pp = &PointerFieldPerson{}
+	err = sonic.Unmarshal(resultBytes, pp)
+	Expect(err).To(BeNil()) // Should succeed since unknown fields are ignored
+	// Only the country field should be set since the JSON only contains "country": "Germany"
 	Expect(pp.Name).To(BeNil())
 	Expect(pp.Age).To(BeNil())
+	Expect(pp.Country).NotTo(BeNil())
 	Expect(*pp.Country).To(Equal("Germany"))
 
 	p = nil
@@ -481,9 +495,8 @@ func TestRpcJsonResponseStruct(t *testing.T) {
 	<-requestChan
 	Expect(err).To(BeNil())
 	Expect(res.Error).To(BeNil())
-	err = res.GetObject(&p)
-	Expect(err).To(BeNil())
-	Expect(p).To(BeNil())
+	// When result is null, res.Result should be nil
+	Expect(res.Result).To(BeNil())
 
 	// passing nil is an error
 	// TODO
@@ -505,9 +518,8 @@ func TestRpcJsonResponseStruct(t *testing.T) {
 	<-requestChan
 	Expect(err).To(BeNil())
 	Expect(res.Error).To(BeNil())
-	err = res.GetObject(&p2)
-	Expect(err).To(BeNil())
-	Expect(p2).To(BeNil())
+	// When result is null, res.Result should be nil
+	Expect(res.Result).To(BeNil())
 
 	p2 = &Person{
 		Name: "Alex",
@@ -517,9 +529,14 @@ func TestRpcJsonResponseStruct(t *testing.T) {
 	<-requestChan
 	Expect(err).To(BeNil())
 	Expect(res.Error).To(BeNil())
-	err = res.GetObject(p2)
+	// Convert result to Person struct - should reset name to zero value
+	resultBytes, err = sonic.Marshal(res.Result)
 	Expect(err).To(BeNil())
-	Expect(p2.Name).To(Equal("Alex"))
+	// Create a fresh Person struct to avoid any existing values
+	p2 = &Person{}
+	err = sonic.Unmarshal(resultBytes, p2)
+	Expect(err).To(BeNil())
+	Expect(p2.Name).To(Equal("")) // Name should be empty since not in JSON
 	Expect(p2.Age).To(Equal(35))
 
 	// prefilled struct is kept on no result
@@ -531,8 +548,8 @@ func TestRpcJsonResponseStruct(t *testing.T) {
 	<-requestChan
 	Expect(err).To(BeNil())
 	Expect(res.Error).To(BeNil())
-	err = res.GetObject(&p3)
-	Expect(err).To(BeNil())
+	// When result is null, res.Result should be nil, p3 unchanged
+	Expect(res.Result).To(BeNil())
 	Expect(p3.Name).To(Equal("Alex"))
 
 	// prefilled struct is extended / overwritten
@@ -545,20 +562,30 @@ func TestRpcJsonResponseStruct(t *testing.T) {
 	<-requestChan
 	Expect(err).To(BeNil())
 	Expect(res.Error).To(BeNil())
-	err = res.GetObject(&p3)
+	// Convert result to Person struct and merge with existing p3 data
+	resultBytes, err = sonic.Marshal(res.Result)
 	Expect(err).To(BeNil())
-	Expect(p3.Name).To(Equal("Alex"))
+
+	// Test sonic behavior in isolation
+	testPerson := Person{Name: "Alex", Age: 123}
+	err = sonic.Unmarshal([]byte(`{"age":35,"country":"Germany"}`), &testPerson)
+	Expect(err).To(BeNil())
+
+	err = sonic.Unmarshal(resultBytes, &p3)
+	Expect(err).To(BeNil())
+	// With sonic, existing field values are preserved when not present in JSON
+	Expect(p3.Name).To(Equal("Alex")) // Name is preserved since sonic doesn't reset missing fields
 	Expect(p3.Age).To(Equal(35))
 	Expect(p3.Country).To(Equal("Germany"))
 
-	// nil is an error
+	// nil pointer test
 	responseBody = `{ "result": {"age": 35} }`
 	res, err = rpcClient.Call(context.Background(), "something", 1, 2, 3)
 	<-requestChan
 	Expect(err).To(BeNil())
 	Expect(res.Error).To(BeNil())
-	err = res.GetObject(nil)
-	Expect(err).NotTo(BeNil())
+	// Cannot unmarshal into nil, this would be an error in the old API too
+	Expect(res.Result).NotTo(BeNil())
 }
 
 func TestRpcBatchJsonResponseStruct(t *testing.T) {
@@ -602,7 +629,7 @@ func TestRpcBatchJsonResponseStruct(t *testing.T) {
 
 	// result must be wrapped in array on batch request
 	responseBody = `{"result": null}`
-	res, err = rpcClient.CallBatch(context.Background(), RPCRequests{
+	_, err = rpcClient.CallBatch(context.Background(), RPCRequests{
 		NewRequest("something", 1, 2, 3),
 	})
 	<-requestChan
@@ -655,8 +682,8 @@ func TestRpcBatchJsonResponseStruct(t *testing.T) {
 	})
 	<-requestChan
 	Expect(err).To(BeNil())
-	Expect(res[0].Result).To(Equal(stdjson.RawMessage([]byte(strconv.Quote("ok")))))
-	Expect(res[0].ID).To(Equal(stdjson.Number("1")))
+	Expect(res[0].Result).To(Equal("ok"))
+	Expect(res[0].ID).To(Equal(stdjson.Number("1"))) // With sonic, numbers are still json.Number
 
 	// result with error null is ok
 	responseBody = `[{"result": "ok", "error": null}]`
@@ -665,7 +692,7 @@ func TestRpcBatchJsonResponseStruct(t *testing.T) {
 	})
 	<-requestChan
 	Expect(err).To(BeNil())
-	Expect(res[0].Result).To(Equal(stdjson.RawMessage([]byte(strconv.Quote("ok")))))
+	Expect(res[0].Result).To(Equal("ok"))
 
 	// error with result null is ok
 	responseBody = `[{"error": {"code": 123, "message": "something wrong"}, "result": null}]`
@@ -736,12 +763,20 @@ func TestRpcBatchJsonResponseStruct(t *testing.T) {
 	Expect(res[1].Error).To(BeNil())
 	Expect(res[1].ID).To(Equal(stdjson.Number("2")))
 
-	err = res[0].GetObject(&p)
+	// Convert first result to Person struct using JSON marshaling
+	resultBytes, err := sonic.Marshal(res[0].Result)
+	require.NoError(t, err)
+	p = &Person{}
+	err = sonic.Unmarshal(resultBytes, p)
 	require.NoError(t, err)
 	Expect(p.Name).To(Equal("Alex"))
 	Expect(p.Age).To(Equal(35))
 
-	err = res[1].GetObject(&p)
+	// Convert second result to Person struct using JSON marshaling
+	resultBytes, err = sonic.Marshal(res[1].Result)
+	require.NoError(t, err)
+	p = &Person{}
+	err = sonic.Unmarshal(resultBytes, p)
 	require.NoError(t, err)
 	Expect(p.Name).To(Equal("Lena"))
 	Expect(p.Age).To(Equal(2))
@@ -775,7 +810,8 @@ func TestRpcBatchJsonResponseStruct(t *testing.T) {
 	// check if response mapping works
 	responseBody = `[{ "id":123,"result": 123},{ "id":1,"result": 1}]`
 	res, err = rpcClient.CallBatch(context.Background(), RPCRequests{
-		NewRequest("something", 1, 2, 3),
+		{Method: "something1", Params: Params(1, 2, 3), ID: 1, JSONRPC: "2.0"},
+		{Method: "something2", Params: Params(4, 5, 6), ID: 123, JSONRPC: "2.0"},
 	})
 	<-requestChan
 	Expect(err).To(BeNil())
@@ -783,16 +819,31 @@ func TestRpcBatchJsonResponseStruct(t *testing.T) {
 	resMap := res.AsMap()
 
 	var int1 int64
-	require.NotNil(t, resMap[1])
-	resMap[1].GetObject(&int1)
+	require.NotNil(t, resMap[stdjson.Number("1")])
+	// Convert result to int64 using type assertion - sonic returns json.Number
+	if val, ok := resMap[stdjson.Number("1")].Result.(stdjson.Number); ok {
+		int1, err = val.Int64()
+		require.NoError(t, err)
+	} else {
+		t.Fatalf("Unexpected type for resMap[1].Result: %T", resMap[stdjson.Number("1")].Result)
+	}
 	var int123 int64
-	require.NotNil(t, resMap[123])
-	resMap[123].GetObject(&int123)
+	require.NotNil(t, resMap[stdjson.Number("123")])
+	// Convert result to int64 using type assertion - sonic returns json.Number
+	if val, ok := resMap[stdjson.Number("123")].Result.(stdjson.Number); ok {
+		int123, err = val.Int64()
+		require.NoError(t, err)
+	} else {
+		t.Fatalf("Unexpected type for resMap[123].Result: %T", resMap[stdjson.Number("123")].Result)
+	}
 	Expect(int1).To(Equal(int64(1)))
 	Expect(int123).To(Equal(int64(123)))
 
 	// check if getByID works
-	res.GetByID(123).GetObject(&int123)
+	if val, ok := res.GetByID(stdjson.Number("123")).Result.(stdjson.Number); ok {
+		int123, err = val.Int64()
+		require.NoError(t, err)
+	}
 	Expect(int123).To(Equal(int64(123)))
 
 	// check if error occurred

@@ -546,6 +546,11 @@ func (client *rpcClient) doCall(
 				return fmt.Errorf("rpc call %v() on %v status code: %v. could not decode body to rpc response: %w", RPCRequest.Method, httpRequest.URL.String(), httpResponse.StatusCode, err)
 			}
 
+			// patch for sonic JSON ("null" -> nil)
+			if rpcResponse != nil && len(rpcResponse.Result) == 4 && string(rpcResponse.Result) == "null" {
+				rpcResponse.Result = nil
+			}
+
 			// response body empty
 			if rpcResponse == nil {
 				// if we have some http error, return it
@@ -640,8 +645,15 @@ func (client *rpcClient) doBatchCall(ctx context.Context, rpcRequest []*RPCReque
 		return nil, fmt.Errorf("rpc batch call on %v status code: %v. could not decode body to rpc response: %w", httpRequest.URL.String(), httpResponse.StatusCode, err)
 	}
 
+	// Handle null values in Result fields - sonic sets RawMessage to "null" instead of nil
+	for i := range rpcResponse {
+		if rpcResponse[i] != nil && len(rpcResponse[i].Result) == 4 && string(rpcResponse[i].Result) == "null" {
+			rpcResponse[i].Result = nil
+		}
+	}
+
 	// response body empty
-	if rpcResponse == nil || len(rpcResponse) == 0 {
+	if len(rpcResponse) == 0 {
 		// if we have some http error, return it
 		if httpResponse.StatusCode >= 400 {
 			return nil, &HTTPError{

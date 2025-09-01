@@ -1,4 +1,4 @@
-module github.com/gagliardetto/solana-go
+module github.com/tradesubzero/solana-go-zero
 
 go 1.19
 

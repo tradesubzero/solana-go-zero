@@ -19,8 +19,8 @@ import (
 
 	spew "github.com/davecgh/go-spew/spew"
 	bin "github.com/gagliardetto/binary"
-	solana "github.com/gagliardetto/solana-go"
-	text "github.com/gagliardetto/solana-go/text"
+	solana "github.com/tradesubzero/solana-go-zero"
+	text "github.com/tradesubzero/solana-go-zero/text"
 	treeout "github.com/gagliardetto/treeout"
 )
 

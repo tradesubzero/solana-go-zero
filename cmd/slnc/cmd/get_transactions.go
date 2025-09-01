@@ -22,13 +22,13 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/gagliardetto/solana-go"
-	_ "github.com/gagliardetto/solana-go/programs/serum"
-	_ "github.com/gagliardetto/solana-go/programs/system"
-	_ "github.com/gagliardetto/solana-go/programs/token"
-	_ "github.com/gagliardetto/solana-go/programs/tokenregistry"
-	"github.com/gagliardetto/solana-go/rpc"
-	"github.com/gagliardetto/solana-go/text"
+	"github.com/tradesubzero/solana-go-zero"
+	_ "github.com/tradesubzero/solana-go-zero/programs/serum"
+	_ "github.com/tradesubzero/solana-go-zero/programs/system"
+	_ "github.com/tradesubzero/solana-go-zero/programs/token"
+	_ "github.com/tradesubzero/solana-go-zero/programs/tokenregistry"
+	"github.com/tradesubzero/solana-go-zero/rpc"
+	"github.com/tradesubzero/solana-go-zero/text"
 	"github.com/spf13/cobra"
 )
 

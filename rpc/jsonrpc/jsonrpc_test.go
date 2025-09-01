@@ -4,7 +4,7 @@ import (
 	"context"
 	stdjson "encoding/json"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -32,12 +32,12 @@ var httpServer *httptest.Server
 // start the testhttp server and stop it when tests are finished
 func TestMain(m *testing.M) {
 	httpServer = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		data, _ := ioutil.ReadAll(r.Body)
+		data, _ := io.ReadAll(r.Body)
 		defer r.Body.Close()
 		// put request and body to channel for the client to investigate them
 		requestChan <- &RequestData{r, string(data)}
 
-		fmt.Fprintf(w, responseBody)
+		fmt.Fprint(w, responseBody)
 	}))
 	defer httpServer.Close()
 
@@ -146,7 +146,7 @@ func TestRpcClient_Call(t *testing.T) {
 		"name": "Alex",
 		"age":  35,
 	})
-	Expect((<-requestChan).body).To(Equal(`{"method":"namedParameters","params":{"age":35,"name":"Alex"},"id":1,"jsonrpc":"2.0"}`))
+	Expect((<-requestChan).body).To(Equal(`{"method":"namedParameters","params":{"name":"Alex","age":35},"id":1,"jsonrpc":"2.0"}`))
 
 	rpcClient.Call(context.Background(), "anonymousStructNoTags", struct {
 		Name string
@@ -269,7 +269,7 @@ func TestRpcClient_CallBatch(t *testing.T) {
 		`{"method":"singlePointerToStruct","params":{"name":"Alex","age":35,"country":"Germany"},"id":17,"jsonrpc":"2.0"},` +
 		`{"method":"multipleStructs","params":[{"name":"Alex","age":35,"country":"Germany"},{"name":"Cuba Libre","ingredients":["rum","cola"]}],"id":18,"jsonrpc":"2.0"},` +
 		`{"method":"singleStructInArray","params":[{"name":"Alex","age":35,"country":"Germany"}],"id":19,"jsonrpc":"2.0"},` +
-		`{"method":"namedParameters","params":{"age":35,"name":"Alex"},"id":20,"jsonrpc":"2.0"},` +
+		`{"method":"namedParameters","params":{"name":"Alex","age":35},"id":20,"jsonrpc":"2.0"},` +
 		`{"method":"anonymousStructNoTags","params":{"Name":"Alex","Age":33},"id":21,"jsonrpc":"2.0"},` +
 		`{"method":"anonymousStructWithTags","params":{"name":"Alex","age":33},"id":22,"jsonrpc":"2.0"},` +
 		`{"method":"structWithNullField","params":{"name":"Alex","address":null},"id":23,"jsonrpc":"2.0"}]`))

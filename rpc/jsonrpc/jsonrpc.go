@@ -16,7 +16,7 @@ import (
 	"github.com/google/uuid"
 )
 
-var json = sonic.ConfigFastest
+var json = sonic.ConfigStd
 
 const (
 	jsonrpcVersion = "2.0"
